@@ -2,6 +2,7 @@
 
 import sys
 import shlex
+from subprocess import check_call
 
 import boto3
 import click
@@ -335,6 +336,7 @@ def ecsh(cluster, service, task, container, bastion):
     print(full_command)
 
     check_instance_ecsdn_error(bastion, instance_address)
+    check_call(shlex.split(full_command))
 
 
 if __name__ == "__main__":
