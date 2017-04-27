@@ -1,0 +1,152 @@
+#!/usr/bin/env python3
+
+from sys import exit
+
+import boto3
+import click
+
+
+@click.command()
+@click.option("--cluster", help="ECS Cluster")
+@click.option("--service", help="ECS Service")
+@click.option("--task", default=None, help="ECS Task")
+@click.option("--container", help="ECS Container name")
+@click.option("--bastion", help="Bastion host to enter platform")
+def ecsh(cluster, service, task, container, bastion):
+
+    ecs = boto3.client("ecs")
+    ec2 = boto3.client("ec2")
+
+    try:
+        cluster = get_listed_resource(
+            ecs,
+            listing_func="list_clusters",
+            listing_kwargs={},
+            kind="cluster",
+            arns_key="clusterArns",
+            name=cluster,
+        )
+
+        service = get_listed_resource(
+            ecs,
+            listing_func="list_services",
+            listing_kwargs={
+                "cluster": cluster,
+            },
+            kind="service",
+            arns_key="serviceArns",
+            name=service,
+        )
+
+        task = get_listed_resource(
+            ecs,
+            listing_func="list_tasks",
+            listing_kwargs={
+                "cluster": cluster,
+                "serviceName": service,
+            },
+            kind="task",
+            arns_key="taskArns",
+            name=task,
+        )
+
+        container = get_described_resource(
+            ecs,
+            describe_func="describe_tasks",
+            describe_kwargs={
+                "cluster": cluster,
+                "tasks": [task],
+            },
+            kind="container",
+            get_fields={
+                "name": lambda d: [x["name"] for x in d["tasks"][0]["containers"]],
+                "container": lambda d: d["tasks"][0]["containerInstanceArn"],
+            },
+            name=container,
+        )
+    except ValueError as e:
+        print(str(e))
+        exit(1)
+
+    instance_resp = ecs.describe_container_instances(
+        cluster=cluster,
+        containerInstances=[container["container"]],
+    )
+
+    instance = instance_resp["containerInstances"][0]["ec2InstanceId"]
+
+    print("\nPreparing to enter {}/{}/{}/{}\nat {}\n".format(
+            cluster,
+            service,
+            task,
+            container["name"],
+            instance
+        )
+    )
+
+    address = ec2.describe_instances(InstanceIds=[instance])["Reservations"][0]["Instances"][0]["NetworkInterfaces"][0]["PrivateIpAddress"]
+
+    if not bastion:
+        bastion = click.prompt("Bastion host", type=str)
+
+    ssh_cmd = "ssh {} ssh {}".format(bastion, address)
+    print(ssh_cmd)
+
+
+def get_listed_resource(ecs, listing_func, listing_kwargs, kind, arns_key, name):
+    resource_resp = getattr(ecs, listing_func)(**listing_kwargs)
+
+    if arns_key not in resource_resp:
+        error = "No {} found, check your config / credentials".format(kind)
+        raise ValueError(error)
+
+    resources = [x.split("/")[1] for x in resource_resp[arns_key]]
+
+    if name and name in resources:
+        return name
+
+    if name and name not in resources:
+        error = "{} '{}' not found in this account, maybe on of {}?"
+        raise ValueError(error.format(kind.capitalize(), name, resources))
+
+    if not name and len(resources) == 1:
+        name = resources[0]
+        msg = "No {} specifided. Using '{}' as is the only one"
+        print(msg.format(kind, name))
+        return name
+
+    msg = "No {} specified, choose one: {}"
+    name = click.prompt(msg.format(kind, resources), type=str)
+    return name
+
+
+def get_described_resource(ecs, describe_func, describe_kwargs, kind, get_fields, name):
+    resource_resp = getattr(ecs, describe_func)(**describe_kwargs)
+
+    resources = {}
+    for field_name, get_field in get_fields.items():
+        # FIXME do some error handling here
+        resources[field_name] = get_field(resource_resp)
+
+    if name and name in resources["name"]:
+        resources["name"] = name
+        return resources
+
+    if name and name in resources["name"]:
+        error = "{} '{}' not found, maybe on of {}?"
+        raise ValueError(error.format(kind.capitalize(), name, resources["name"]))
+
+    if not name and len(resources) == 1:
+        name = resources["name"][0]
+        msg = "No {} specifided. Using '{}' as is the only one"
+        print(msg.format(kind, name))
+        resources["name"] = name
+        return resources
+
+    msg = "No {} specified, choose one: {}"
+    name = click.prompt(msg.format(kind, resources["name"]), type=str)
+    return get_described_resource(ecs, describe_func, describe_kwargs, kind, get_fields, name)
+
+
+if __name__ == "__main__":
+    ecsh()
