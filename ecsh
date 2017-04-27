@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 
+import shlex
 from sys import exit
 
 import boto3
 import click
+
+import sh
+from sh import ssh
 
 
 @click.command()
@@ -84,13 +88,76 @@ def ecsh(cluster, service, task, container, bastion):
         )
     )
 
-    address = ec2.describe_instances(InstanceIds=[instance])["Reservations"][0]["Instances"][0]["NetworkInterfaces"][0]["PrivateIpAddress"]
+    instance_address = ec2.describe_instances(InstanceIds=[instance])["Reservations"][0]["Instances"][0]["NetworkInterfaces"][0]["PrivateIpAddress"]
 
     if not bastion:
         bastion = click.prompt("Bastion host", type=str)
 
-    ssh_cmd = "ssh {} ssh {}".format(bastion, address)
-    print(ssh_cmd)
+    test_text = "ecsh test"
+    test_ssh_cmd = "echo '{}'".format(test_text)
+
+    try:
+        bastion_test = ssh(shlex.split(bastion), test_ssh_cmd).strip()
+    except sh.ErrorReturnCode_2:
+        ssh_error = e.stderr.strip()
+        bastion_test = None
+
+
+    if bastion_test != test_text:
+        msg = """
+{}
+
+Ssh to {} failed.
+
+You can pass to --bastion the full ssh arguments with user / key file.
+
+Is recommended to setup at YOUR machine the .ssh/config file to allow
+ssh without password to {}
+i.e.
+
+    Host your-fantastic-host.aws.com
+        user ec2-suer
+        IdentityFile ~/.ssh/your-fantastic-host.pem
+
+""".format(ssh_error, bastion, bastion)
+        print(msg)
+        exit(1)
+
+
+    instance_test_cmd = "{} ssh {} {}".format(
+        bastion,
+        instance_address,
+        test_ssh_cmd,
+    )
+    try:
+        container_instance_test = ssh(shlex.split(instance_test_cmd)).strip()
+    except sh.ErrorReturnCode_255 as e:
+        ssh_error = e.stderr.strip()
+        container_instance_test = None
+
+    if container_instance_test != test_text:
+        msg = """
+{}
+
+Ssh to {instance_address} from {bastion} failed.
+
+Is needed to setup at bastion ({bastion}) the .ssh/config file to allow
+ssh without password to {instance_address}.
+i.e.
+
+    Host {instance_address} # Or some whildcard
+        user ec2-suer
+        IdentityFile ~/.ssh/my-awesome-internal-instances.pem
+
+""".format(ssh_error, instance_address=instance_address, bastion=bastion)
+        print(msg)
+        exit(1)
+
+    print(container_instance_test)
+
+    print("Great!")
+
+
 
 
 def get_listed_resource(ecs, listing_func, listing_kwargs, kind, arns_key, name):
