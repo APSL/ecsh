@@ -116,7 +116,7 @@ ssh without password to {}
 i.e.
 
     Host your-fantastic-host.aws.com
-        user ec2-suer
+        user ec2-user
         IdentityFile ~/.ssh/your-fantastic-host.pem
 
 """.format(ssh_error, bastion, bastion)
@@ -136,6 +136,7 @@ i.e.
         container_instance_test = None
 
     if container_instance_test != test_text:
+        ip_wildcard_suggest = ".".join(instance_address.split(".")[:2]) + ".*"
         msg = """
 {}
 
@@ -145,11 +146,11 @@ Is needed to setup at bastion ({bastion}) the .ssh/config file to allow
 ssh without password to {instance_address}.
 i.e.
 
-    Host {instance_address} # Or some whildcard
+    Host {ip_wildcard_suggest} # Or some whildcard
         user ec2-suer
         IdentityFile ~/.ssh/my-awesome-internal-instances.pem
 
-""".format(ssh_error, instance_address=instance_address, bastion=bastion)
+""".format(ssh_error, instance_address=instance_address, bastion=bastion, ip_wildcard_suggest=ip_wildcard_suggest)
         print(msg)
         exit(1)
 
