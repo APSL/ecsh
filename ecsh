@@ -325,7 +325,7 @@ def ecsh(cluster, service, task, container, bastion):
         container_name,
     )
 
-    full_command = "ssh {} ssh {} docker exec -i {} sh".format(
+    full_command = "ssh -t {} ssh -t {} docker exec -it {} sh".format(
         bastion,
         instance_address,
         docker_name,
