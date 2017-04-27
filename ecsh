@@ -70,7 +70,7 @@ def get_listed_resource(ecs, listing_func, listing_kwargs, kind, arns_key, name)
         print(msg.format(kind, name))
         return name
 
-    msg = "No {} specified, choose one: {}"
+    msg = "\nNo {} specified, choose one:\n{}"
     name = click.prompt(msg.format(kind, resources), type=str)
     return name
 
@@ -98,7 +98,7 @@ def get_described_resource(ecs, describe_func, describe_kwargs, kind, get_fields
         resources["name"] = name
         return resources
 
-    msg = "No {} specified, choose one: {}"
+    msg = "\nNo {} specified, choose one:\n{}"
     name = click.prompt(msg.format(kind, resources["name"]), type=str)
 
     return get_described_resource(
@@ -290,14 +290,6 @@ def ecsh(cluster, service, task, container, bastion):
 
     instance = instance_resp["containerInstances"][0]["ec2InstanceId"]
 
-    print("\nPreparing to enter {}/{}/{}/{}\nat {}\n".format(
-        cluster,
-        service,
-        task,
-        container_name,
-        instance,
-        )
-         )
 
     instance_address = ec2.describe_instances(InstanceIds=[instance])["Reservations"][0]["Instances"][0]["NetworkInterfaces"][0]["PrivateIpAddress"]
 
@@ -333,8 +325,16 @@ def ecsh(cluster, service, task, container, bastion):
         instance_address,
         docker_name,
     )
-    print(full_command)
+    print("Executing: \n\n\t{}\n\n".format(full_command))
 
+    print("Entering {}/{}/{}/{}...".format(
+        cluster,
+        service,
+        task,
+        container_name,
+        instance,
+        )
+         )
     check_instance_ecsdn_error(bastion, instance_address)
     check_call(shlex.split(full_command))
 
