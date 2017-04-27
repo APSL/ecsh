@@ -10,6 +10,214 @@ import sh
 from sh import ssh
 
 
+ssh_error_bastion_message="""
+{}
+
+Ssh to {} failed.
+
+You can pass to --bastion the full ssh arguments with user / key file.
+
+Is recommended to setup at YOUR machine the .ssh/config file to allow
+ssh without password to {}
+i.e.
+
+    Host your-fantastic-host.aws.com
+        user ec2-user
+        IdentityFile ~/.ssh/your-fantastic-host.pem
+"""
+
+ssh_error_instance_message="""
+{}
+
+Ssh to {instance_address} from {bastion} failed.
+
+Is needed to setup at bastion ({bastion}) the .ssh/config file to allow
+ssh without password to {instance_address}.
+i.e.
+
+    Host {ip_wildcard_suggest} # Or some whildcard
+        user ec2-suer
+        IdentityFile ~/.ssh/my-awesome-internal-instances.pem
+"""
+
+ecsdn_error_message="""
+{}
+
+Maybe ecsdn command is not deployed at {}.
+"""
+
+
+def get_listed_resource(ecs, listing_func, listing_kwargs, kind, arns_key, name):
+    resource_resp = getattr(ecs, listing_func)(**listing_kwargs)
+
+    if arns_key not in resource_resp:
+        error = "No {} found, check your config / credentials".format(kind)
+        raise ValueError(error)
+
+    resources = [x.split("/")[1] for x in resource_resp[arns_key]]
+
+    if name and name in resources:
+        return name
+
+    if name and name not in resources:
+        error = "{} '{}' not found in this account, maybe on of {}?"
+        raise ValueError(error.format(kind.capitalize(), name, resources))
+
+    if not name and len(resources) == 1:
+        name = resources[0]
+        msg = "No {} specifided. Using '{}' as is the only one"
+        print(msg.format(kind, name))
+        return name
+
+    msg = "No {} specified, choose one: {}"
+    name = click.prompt(msg.format(kind, resources), type=str)
+    return name
+
+
+def get_described_resource(ecs, describe_func, describe_kwargs, kind, get_fields, name):
+    resource_resp = getattr(ecs, describe_func)(**describe_kwargs)
+
+    resources = {}
+    for field_name, get_field in get_fields.items():
+        # FIXME do some error handling here
+        resources[field_name] = get_field(resource_resp)
+
+    if name and name in resources["name"]:
+        resources["name"] = name
+        return resources
+
+    if name and name in resources["name"]:
+        error = "{} '{}' not found, maybe on of {}?"
+        raise ValueError(error.format(kind.capitalize(), name, resources["name"]))
+
+    if not name and len(resources) == 1:
+        name = resources["name"][0]
+        msg = "No {} specifided. Using '{}' as is the only one"
+        print(msg.format(kind, name))
+        resources["name"] = name
+        return resources
+
+    msg = "No {} specified, choose one: {}"
+    name = click.prompt(msg.format(kind, resources["name"]), type=str)
+
+    return get_described_resource(
+                ecs,
+                describe_func,
+                describe_kwargs,
+                kind,
+                get_fields,
+                name,
+            )
+
+
+def check_bastion_ssh_error(bastion):
+    """
+    " Check if there is any error sshing bastion
+    "    @return error message if error
+    "            None otherwise if success
+    """
+
+    test_text = "ecsh test"
+    test_ssh_cmd = "echo '{}'".format(test_text)
+
+    ssh_error = ""
+    try:
+        bastion_test = ssh(shlex.split(bastion), test_ssh_cmd).strip()
+    except sh.ErrorReturnCode_2 as e:
+        ssh_error = e.stderr.strip()
+        bastion_test = None
+
+    if bastion_test == test_text:
+        return None
+
+    return ssh_error_bastion_message.format(ssh_error, bastion, bastion)
+
+
+def check_instance_ssh_error(bastion, instance_address):
+    """
+    " Check if there is any error sshing instance from bastion
+    "    @return error message if error
+    "            None otherwise if success
+    """
+
+    test_text = "ecsh test"
+    test_ssh_cmd = "echo '{}'".format(test_text)
+
+    instance_test_cmd = "{} ssh {} {}".format(
+        bastion,
+        instance_address,
+        test_ssh_cmd,
+    )
+
+    ssh_error = ""
+    try:
+        container_instance_test = ssh(shlex.split(instance_test_cmd)).strip()
+    except sh.ErrorReturnCode_255 as e:
+        ssh_error = e.stderr.strip()
+        container_instance_test = None
+
+    if container_instance_test == test_text:
+        return None # Success!
+
+    ip_wildcard_suggest = ".".join(instance_address.split(".")[:2]) + ".*"
+    return ssh_error_instance_message.format(
+        ssh_error,
+        instance_address=instance_address,
+        bastion=bastion,
+        ip_wildcard_suggest=ip_wildcard_suggest,
+    )
+
+
+def check_instance_ecsdn_error(bastion, instance_address):
+    """
+    " Check if there is any error executing ecsdn in instance
+    "    @return error message if error
+    "            None otherwise if success
+    """
+
+    test_ecsdn_cmd = "ecsdn"
+
+    instance_test_cmd = "{} ssh {} {}".format(
+        bastion,
+        instance_address,
+        test_ecsdn_cmd,
+    )
+
+    cmd_error = None
+    try:
+        container_instance_test = ssh(shlex.split(instance_test_cmd)).strip()
+    except sh.ErrorReturnCode_127 as e:
+        cmd_error = ecsdn_error_message.format(e.stderr.strip(), instance_address)
+        container_instance_test = None
+    except sh.ErrorReturnCode_2:
+        # ecsdn if present and without arguments will produce this error :D
+        pass
+
+    return cmd_error
+
+
+
+def get_docker_name(bastion, instance_address, task, container_name):
+    docker_name_cmd = "{} ssh {} ecsdn {} {}".format(
+        bastion,
+        instance_address,
+        task,
+        container_name,
+    )
+    try:
+        return ssh(shlex.split(docker_name_cmd)).strip()
+    except sh.ErrorReturnCode_255 as e:
+        return None
+
+
+def get_arn_prefix(ecs):
+    return ecs.list_clusters()["clusterArns"][0].split("/")[0].strip(":cluster")
+
+
+def get_task_arn(ecs, task):
+    return "{}:{}/{}".format(get_arn_prefix(ecs), "task", task)
+
+
 @click.command()
 @click.option("--cluster", help="ECS Cluster")
 @click.option("--service", help="ECS Service")
@@ -20,7 +228,6 @@ def ecsh(cluster, service, task, container, bastion):
 
     ecs = boto3.client("ecs")
     ec2 = boto3.client("ec2")
-
     try:
         cluster = get_listed_resource(
             ecs,
@@ -76,6 +283,7 @@ def ecsh(cluster, service, task, container, bastion):
         cluster=cluster,
         containerInstances=[container["container"]],
     )
+    container_name = container["name"]
 
     instance = instance_resp["containerInstances"][0]["ec2InstanceId"]
 
@@ -83,7 +291,7 @@ def ecsh(cluster, service, task, container, bastion):
             cluster,
             service,
             task,
-            container["name"],
+            container_name,
             instance
         )
     )
@@ -93,127 +301,38 @@ def ecsh(cluster, service, task, container, bastion):
     if not bastion:
         bastion = click.prompt("Bastion host", type=str)
 
-    test_text = "ecsh test"
-    test_ssh_cmd = "echo '{}'".format(test_text)
-
-    try:
-        bastion_test = ssh(shlex.split(bastion), test_ssh_cmd).strip()
-    except sh.ErrorReturnCode_2:
-        ssh_error = e.stderr.strip()
-        bastion_test = None
-
-
-    if bastion_test != test_text:
-        msg = """
-{}
-
-Ssh to {} failed.
-
-You can pass to --bastion the full ssh arguments with user / key file.
-
-Is recommended to setup at YOUR machine the .ssh/config file to allow
-ssh without password to {}
-i.e.
-
-    Host your-fantastic-host.aws.com
-        user ec2-user
-        IdentityFile ~/.ssh/your-fantastic-host.pem
-
-""".format(ssh_error, bastion, bastion)
-        print(msg)
+    error = check_bastion_ssh_error(bastion)
+    if error:
+        print(error)
         exit(1)
 
+    error = check_instance_ssh_error(bastion, instance_address)
+    if error:
+        print(error)
+        exit(1)
 
-    instance_test_cmd = "{} ssh {} {}".format(
+    error = check_instance_ecsdn_error(bastion, instance_address)
+    if error:
+        print(error)
+        exit(1)
+
+    task_arn = get_task_arn(ecs, task)
+
+    docker_name = get_docker_name(
         bastion,
         instance_address,
-        test_ssh_cmd,
+        task_arn,
+        container_name,
     )
-    try:
-        container_instance_test = ssh(shlex.split(instance_test_cmd)).strip()
-    except sh.ErrorReturnCode_255 as e:
-        ssh_error = e.stderr.strip()
-        container_instance_test = None
 
-    if container_instance_test != test_text:
-        ip_wildcard_suggest = ".".join(instance_address.split(".")[:2]) + ".*"
-        msg = """
-{}
+    full_command = "ssh {} ssh {} docker exec -i {} sh".format(
+        bastion,
+        instance_address,
+        docker_name,
+    )
+    print(full_command)
 
-Ssh to {instance_address} from {bastion} failed.
-
-Is needed to setup at bastion ({bastion}) the .ssh/config file to allow
-ssh without password to {instance_address}.
-i.e.
-
-    Host {ip_wildcard_suggest} # Or some whildcard
-        user ec2-suer
-        IdentityFile ~/.ssh/my-awesome-internal-instances.pem
-
-""".format(ssh_error, instance_address=instance_address, bastion=bastion, ip_wildcard_suggest=ip_wildcard_suggest)
-        print(msg)
-        exit(1)
-
-    print(container_instance_test)
-
-    print("Great!")
-
-
-
-
-def get_listed_resource(ecs, listing_func, listing_kwargs, kind, arns_key, name):
-    resource_resp = getattr(ecs, listing_func)(**listing_kwargs)
-
-    if arns_key not in resource_resp:
-        error = "No {} found, check your config / credentials".format(kind)
-        raise ValueError(error)
-
-    resources = [x.split("/")[1] for x in resource_resp[arns_key]]
-
-    if name and name in resources:
-        return name
-
-    if name and name not in resources:
-        error = "{} '{}' not found in this account, maybe on of {}?"
-        raise ValueError(error.format(kind.capitalize(), name, resources))
-
-    if not name and len(resources) == 1:
-        name = resources[0]
-        msg = "No {} specifided. Using '{}' as is the only one"
-        print(msg.format(kind, name))
-        return name
-
-    msg = "No {} specified, choose one: {}"
-    name = click.prompt(msg.format(kind, resources), type=str)
-    return name
-
-
-def get_described_resource(ecs, describe_func, describe_kwargs, kind, get_fields, name):
-    resource_resp = getattr(ecs, describe_func)(**describe_kwargs)
-
-    resources = {}
-    for field_name, get_field in get_fields.items():
-        # FIXME do some error handling here
-        resources[field_name] = get_field(resource_resp)
-
-    if name and name in resources["name"]:
-        resources["name"] = name
-        return resources
-
-    if name and name in resources["name"]:
-        error = "{} '{}' not found, maybe on of {}?"
-        raise ValueError(error.format(kind.capitalize(), name, resources["name"]))
-
-    if not name and len(resources) == 1:
-        name = resources["name"][0]
-        msg = "No {} specifided. Using '{}' as is the only one"
-        print(msg.format(kind, name))
-        resources["name"] = name
-        return resources
-
-    msg = "No {} specified, choose one: {}"
-    name = click.prompt(msg.format(kind, resources["name"]), type=str)
-    return get_described_resource(ecs, describe_func, describe_kwargs, kind, get_fields, name)
+    check_instance_ecsdn_error(bastion, instance_address)
 
 
 if __name__ == "__main__":

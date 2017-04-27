@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+
+from sys import exit
+
+import click
+from requests import get
+
+###############################
+# Amazon Linux:
+#   yum install python-35
+#   yum install python35-pip
+#
+#   pip-3.5 install click
+#   pip-3.5 install requests
+#
+###############################
+
+@click.command()
+@click.argument("task_arn")
+@click.argument("container_name")
+@click.option("--verbose", "-v", default=False)
+def ecs_docker_name(task_arn, container_name, verbose):
+    """ ECS Docker Name
+    " Return the docker name giving an TaskArn and the container name
+    """
+    api_url = "http://localhost:51678/v1/tasks"
+
+    if not task_arn:
+        if verbose:
+            print("No taskArn specified.")
+        exit(1)
+
+    if not container_name:
+        if verbose:
+            print("No container specified.")
+        exit(1)
+
+
+    payload = {
+        "taskarn": task_arn,
+    }
+    resp = get(api_url, params=payload).json()
+
+
+    if "Containers" not in resp or not resp["Containers"]:
+        if verbose:
+            print("Task not found")
+        exit(1)
+
+    for container in resp["Containers"]:
+        if container["Name"] == container_name:
+            print(container["DockerName"])
+            exit(0)
+
+    if verbose:
+        print("Container not found")
+    exit(1)
+
+
+if __name__ == "__main__":
+    ecs_docker_name()
+
