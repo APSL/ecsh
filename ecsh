@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
+import sys
 import shlex
-from sys import exit
 
 import boto3
 import click
@@ -10,7 +10,7 @@ import sh
 from sh import ssh
 
 
-ssh_error_bastion_message="""
+ERROR_MESSAGE_SSH_BASTION = """
 {}
 
 Ssh to {} failed.
@@ -26,7 +26,7 @@ i.e.
         IdentityFile ~/.ssh/your-fantastic-host.pem
 """
 
-ssh_error_instance_message="""
+ERROR_MESSAGE_SSH_INSTANCE = """
 {}
 
 Ssh to {instance_address} from {bastion} failed.
@@ -40,7 +40,7 @@ i.e.
         IdentityFile ~/.ssh/my-awesome-internal-instances.pem
 """
 
-ecsdn_error_message="""
+ERROR_MESSAGE_ECSDN = """
 {}
 
 Maybe ecsdn command is not deployed at {}.
@@ -101,13 +101,13 @@ def get_described_resource(ecs, describe_func, describe_kwargs, kind, get_fields
     name = click.prompt(msg.format(kind, resources["name"]), type=str)
 
     return get_described_resource(
-                ecs,
-                describe_func,
-                describe_kwargs,
-                kind,
-                get_fields,
-                name,
-            )
+        ecs,
+        describe_func,
+        describe_kwargs,
+        kind,
+        get_fields,
+        name,
+    )
 
 
 def check_bastion_ssh_error(bastion):
@@ -123,14 +123,14 @@ def check_bastion_ssh_error(bastion):
     ssh_error = ""
     try:
         bastion_test = ssh(shlex.split(bastion), test_ssh_cmd).strip()
-    except sh.ErrorReturnCode_2 as e:
-        ssh_error = e.stderr.strip()
+    except sh.ErrorReturnCode_2 as excep:
+        ssh_error = excep.stderr.strip()
         bastion_test = None
 
     if bastion_test == test_text:
         return None
 
-    return ssh_error_bastion_message.format(ssh_error, bastion, bastion)
+    return ERROR_MESSAGE_SSH_BASTION.format(ssh_error, bastion, bastion)
 
 
 def check_instance_ssh_error(bastion, instance_address):
@@ -152,15 +152,15 @@ def check_instance_ssh_error(bastion, instance_address):
     ssh_error = ""
     try:
         container_instance_test = ssh(shlex.split(instance_test_cmd)).strip()
-    except sh.ErrorReturnCode_255 as e:
-        ssh_error = e.stderr.strip()
+    except sh.ErrorReturnCode_255 as excep:
+        ssh_error = excep.stderr.strip()
         container_instance_test = None
 
     if container_instance_test == test_text:
         return None # Success!
 
     ip_wildcard_suggest = ".".join(instance_address.split(".")[:2]) + ".*"
-    return ssh_error_instance_message.format(
+    return ERROR_MESSAGE_SSH_INSTANCE.format(
         ssh_error,
         instance_address=instance_address,
         bastion=bastion,
@@ -185,10 +185,12 @@ def check_instance_ecsdn_error(bastion, instance_address):
 
     cmd_error = None
     try:
-        container_instance_test = ssh(shlex.split(instance_test_cmd)).strip()
-    except sh.ErrorReturnCode_127 as e:
-        cmd_error = ecsdn_error_message.format(e.stderr.strip(), instance_address)
-        container_instance_test = None
+        ssh(shlex.split(instance_test_cmd)).strip()
+    except sh.ErrorReturnCode_127 as excep:
+        cmd_error = ERROR_MESSAGE_ECSDN.format(
+            excep.stderr.strip(),
+            instance_address
+        )
     except sh.ErrorReturnCode_2:
         # ecsdn if present and without arguments will produce this error :D
         pass
@@ -206,7 +208,7 @@ def get_docker_name(bastion, instance_address, task, container_name):
     )
     try:
         return ssh(shlex.split(docker_name_cmd)).strip()
-    except sh.ErrorReturnCode_255 as e:
+    except sh.ErrorReturnCode_255:
         return None
 
 
@@ -275,9 +277,9 @@ def ecsh(cluster, service, task, container, bastion):
             },
             name=container,
         )
-    except ValueError as e:
-        print(str(e))
-        exit(1)
+    except ValueError as excep:
+        print(str(excep))
+        sys.exit(1)
 
     instance_resp = ecs.describe_container_instances(
         cluster=cluster,
@@ -288,13 +290,13 @@ def ecsh(cluster, service, task, container, bastion):
     instance = instance_resp["containerInstances"][0]["ec2InstanceId"]
 
     print("\nPreparing to enter {}/{}/{}/{}\nat {}\n".format(
-            cluster,
-            service,
-            task,
-            container_name,
-            instance
+        cluster,
+        service,
+        task,
+        container_name,
+        instance,
         )
-    )
+         )
 
     instance_address = ec2.describe_instances(InstanceIds=[instance])["Reservations"][0]["Instances"][0]["NetworkInterfaces"][0]["PrivateIpAddress"]
 
@@ -304,17 +306,17 @@ def ecsh(cluster, service, task, container, bastion):
     error = check_bastion_ssh_error(bastion)
     if error:
         print(error)
-        exit(1)
+        sys.exit(1)
 
     error = check_instance_ssh_error(bastion, instance_address)
     if error:
         print(error)
-        exit(1)
+        sys.exit(1)
 
     error = check_instance_ecsdn_error(bastion, instance_address)
     if error:
         print(error)
-        exit(1)
+        sys.exit(1)
 
     task_arn = get_task_arn(ecs, task)
 
