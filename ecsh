@@ -37,7 +37,7 @@ ssh without password to {instance_address}.
 i.e.
 
     Host {ip_wildcard_suggest} # Or some whildcard
-        user ec2-suer
+        user ec2-user
         IdentityFile ~/.ssh/my-awesome-internal-instances.pem
 """
 
