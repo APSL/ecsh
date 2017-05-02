@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import ast
+
 import sys
 import shlex
 from subprocess import check_call
@@ -46,6 +48,8 @@ ERROR_MESSAGE_ECSDN = """
 
 Maybe ecsdn command is not deployed at {}.
 """
+
+ECSDN_PATH="~/bin/ecsdn"
 
 
 def get_listed_resource(ecs, listing_func, listing_kwargs, kind, arns_key, name):
@@ -201,16 +205,37 @@ def check_instance_ecsdn_error(bastion, instance_address):
 
 
 def get_docker_name(bastion, instance_address, task, container_name):
-    docker_name_cmd = "{} ssh {} ecsdn {} {}".format(
+#    docker_name_cmd = "{} ssh {} ecsdn {} {}".format(
+#        bastion,
+#        instance_address,
+#        task,
+#        container_name,
+#    )
+#    try:
+#        return ssh(shlex.split(docker_name_cmd)).strip()
+#    except sh.ErrorReturnCode_255:
+#        return None
+    docker_api_url = "http://localhost:51678/v1/tasks?taskarn={}".format(
+        task,
+    )
+
+    docker_name_cmd = "{} ssh {} curl -s '{}'".format(
         bastion,
         instance_address,
-        task,
-        container_name,
+        docker_api_url,
     )
-    try:
-        return ssh(shlex.split(docker_name_cmd)).strip()
-    except sh.ErrorReturnCode_255:
-        return None
+    resp_json = ssh(shlex.split(docker_name_cmd)).strip()
+    resp = ast.literal_eval(resp_json)
+
+    containers = []
+    if "Containers" not in resp or not resp["Containers"]:
+        return containers
+
+    for container in resp["Containers"]:
+        if container["Name"] == container_name:
+            containers.append(container["DockerName"])
+
+    return containers
 
 
 def get_arn_prefix(ecs):
@@ -319,6 +344,15 @@ def ecsh(cluster, service, task, container, bastion):
         task_arn,
         container_name,
     )
+
+    if docker_name:
+        docker_name = docker_name[0]
+    else:
+        print("No docker container name found inside {}".format(
+                instance_address,
+            )
+        )
+        exit(1)
 
     full_command = "ssh -t {} ssh -t {} docker exec -it {} sh".format(
         bastion,
