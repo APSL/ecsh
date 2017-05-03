@@ -37,27 +37,25 @@ By the Elastic Container Service poit of view we will do:
 
 By the EC2 point of view you will do:
 
-                ++=======================================================++
-                ||                                                       ||
-                ||  Amazon Web Services - VPC                            ||
-                ||                                                       ||
-                ||                    +-------------------------------+  ||
-                ||                    |                               |  ||
-                ||                    |  EC2-Instance                 |  ||
-    +-----+ ssh ||   +---------+ ssh  |                               |  ||
-    | you |-----||-->| bastion |----->|----+    +------------------+  |  ||
-    +-----+     ||   +---------+      |    +--->| docker-container |  |  ||
-                ||                    |         +------------------+  |  ||
-                ||                    |                               |  ||
-                ||                    |         +------------------+  |  ||
-                ||                    |         | docker-container |  |  ||
-                ||                    |         +------------------+  |  ||
-                ||                    |                               |  ||
-                ||                    +-------------------------------+  ||
-                ||                                                       ||
-                ++=======================================================++
-
-
+                ++======================================================++
+                ||                                                      ||
+                ||  Amazon Web Services - VPC                           ||
+                ||                                                      ||
+                ||                   +-------------------------------+  ||
+                ||                   |                               |  ||
+                ||                   |  EC2-Instance                 |  ||
+    +-----+ ssh ||   +---------+ ssh |                               |  ||
+    | you |-----||-->| bastion |---->|----+    +------------------+  |  ||
+    +-----+     ||   +---------+     |    +--->| docker-container |  |  ||
+                ||                   |         +------------------+  |  ||
+                ||                   |                               |  ||
+                ||                   |         +------------------+  |  ||
+                ||                   |         | docker-container |  |  ||
+                ||                   |         +------------------+  |  ||
+                ||                   |                               |  ||
+                ||                   +-------------------------------+  ||
+                ||                                                      ||
+                ++======================================================++
 
 
 # Install
@@ -139,19 +137,19 @@ environments. All variables are optional.
 
 With those settings:
 
-If I type `ecsh` without arguments I'll enter using bastion.mydomain.com to
+* If I type `ecsh` without arguments I'll enter using bastion.mydomain.com to
 mycluster/sales/<last spawned task> and it will be prompet which container to use.
 
-If I type ecsh -e myprod I use all the default settings but the container won't
+* If I type ecsh -e myprod I use all the default settings but the container won't
 be prompted as web_front will be used.
 
-If I type ecsh -e mydev I'll inherit the sales service and task from the defaults
+* If I type ecsh -e mydev I'll inherit the sales service and task from the defaults
 but the bastion, clustera and container will be overriden by the environment specific ones.
 
-If at some level there is one one choose (i.e. you only have one cluster) `ecsh`
+* If at some level there is one one choose (i.e. you only have one cluster) `ecsh`
 won't prompt anything and will use it.
 
-If the tag !latest! is set to the task if there is more than one task running
+* If the tag !latest! is set to the task if there is more than one task running
 the most recent one is used.
 
 
