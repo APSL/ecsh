@@ -1,7 +1,11 @@
 # -*- coding: utf-8 -*-
 
+from sys import version_info
+
 from setuptools import setup
 
+if version_info.major != 3:
+    raise OSError("Python 3 is required")
 
 INSTALL_REQUIRES = [
     'click',
