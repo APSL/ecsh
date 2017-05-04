@@ -25,6 +25,6 @@ setup(
         ecsh=ecsh.ecsh:ecsh
     """,
     author=u"Bartomeu Miro Mateu",
-    author_email=u"bartomeumiro at apsl dot net",
+    author_email=u"bmiro@apsl.net",
     description=u"Cli tool to access Amazon ECS containers with a shell"
 )
