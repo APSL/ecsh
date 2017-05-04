@@ -15,7 +15,7 @@ INSTALL_REQUIRES = [
 
 setup(
     name='ecsh',
-    version='0.2.0',
+    version='0.2.1',
     packages=['ecsh'],
     url=u"https://github.com/apsl/ecsh",
     license='GPLv3',
