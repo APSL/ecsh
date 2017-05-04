@@ -1,0 +1,5 @@
+*.pyc
+*.swp
+dist/
+ecsh.egg-info
+ecsh/__pycache__
