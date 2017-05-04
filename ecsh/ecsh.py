@@ -76,7 +76,6 @@ class AWSResource():
         name = click.prompt(msg.format(kind, resources), type=str)
         return name
 
-
     def describe(self, dfunc, dkwargs, kind, get_fields, name):
         resource_resp = getattr(self.__ecs, dfunc)(**dkwargs)
 
@@ -90,8 +89,12 @@ class AWSResource():
             return resources
 
         if name and name in resources["name"]:
-            error = "{} '{}' not found, maybe on of {}?"
-            raise ValueError(error.format(kind.capitalize(), name, resources["name"]))
+            error = "{} '{}' not found, maybe on of {}?".format(
+                kind.capitalize(),
+                name,
+                resources["name"],
+            )
+            raise ValueError(error)
 
         if not name and len(resources) == 1:
             name = resources["name"][0]
