@@ -154,7 +154,8 @@ def check_instance_ssh_error(bastion, instance_address):
         container_instance_test = None
 
     if container_instance_test == test_text:
-        return None # Success!
+        # Success!
+        return None
 
     ip_wildcard_suggest = ".".join(instance_address.split(".")[:2]) + ".*"
     return ERROR_MESSAGE_SSH_INSTANCE.format(
@@ -266,8 +267,11 @@ def ecsh(cluster, service, task, container, bastion):
 
     instance = instance_resp["containerInstances"][0]["ec2InstanceId"]
 
-
-    instance_address = ec2.describe_instances(InstanceIds=[instance])["Reservations"][0]["Instances"][0]["NetworkInterfaces"][0]["PrivateIpAddress"]
+    instance_address = ec2.describe_instances(InstanceIds=[instance])\
+        ["Reservations"][0]\
+        ["Instances"][0]\
+        ["NetworkInterfaces"][0]\
+        ["PrivateIpAddress"]
 
     if not bastion:
         bastion = click.prompt("Bastion host", type=str)

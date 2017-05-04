@@ -28,5 +28,3 @@ setup(
     author_email=u"bartomeumiro at apsl dot net",
     description=u"Cli tool to access Amazon ECS containers with a shell"
 )
-
-
