@@ -44,67 +44,72 @@ i.e.
 """
 
 
-def get_listed_resource(ecs, listing_func, listing_kwargs, kind, arns_key, name):
-    resource_resp = getattr(ecs, listing_func)(**listing_kwargs)
+class AWSResource():
 
-    if arns_key not in resource_resp:
-        error = "No {} found, check your config / credentials".format(kind)
-        raise ValueError(error)
+    def __init__(self):
+        self.__ecs = boto3.client("ecs")
+        self.__ec2 = boto3.client("ec2")
 
-    resources = [x.split("/")[1] for x in resource_resp[arns_key]]
+    def list(self, lfunc, lkwargs, kind, arns_key, name):
+        resource_resp = getattr(self.__ecs, lfunc)(**lkwargs)
 
-    if name and name in resources:
+        if arns_key not in resource_resp:
+            error = "No {} found, check your config / credentials".format(kind)
+            raise ValueError(error)
+
+        resources = [x.split("/")[1] for x in resource_resp[arns_key]]
+
+        if name and name in resources:
+            return name
+
+        if name and name not in resources:
+            error = "{} '{}' not found in this account, maybe on of {}?"
+            raise ValueError(error.format(kind.capitalize(), name, resources))
+
+        if not name and len(resources) == 1:
+            name = resources[0]
+            msg = "No {} specifided. Using '{}' as is the only one"
+            print(msg.format(kind, name))
+            return name
+
+        msg = "\nNo {} specified, choose one:\n{}"
+        name = click.prompt(msg.format(kind, resources), type=str)
         return name
 
-    if name and name not in resources:
-        error = "{} '{}' not found in this account, maybe on of {}?"
-        raise ValueError(error.format(kind.capitalize(), name, resources))
 
-    if not name and len(resources) == 1:
-        name = resources[0]
-        msg = "No {} specifided. Using '{}' as is the only one"
-        print(msg.format(kind, name))
-        return name
+    def describe(self, dfunc, dkwargs, kind, get_fields, name):
+        resource_resp = getattr(self.__ecs, dfunc)(**dkwargs)
 
-    msg = "\nNo {} specified, choose one:\n{}"
-    name = click.prompt(msg.format(kind, resources), type=str)
-    return name
+        resources = {}
+        for field_name, get_field in get_fields.items():
+            # FIXME do some error handling here
+            resources[field_name] = get_field(resource_resp)
 
+        if name and name in resources["name"]:
+            resources["name"] = name
+            return resources
 
-def get_described_resource(ecs, describe_func, describe_kwargs, kind, get_fields, name):
-    resource_resp = getattr(ecs, describe_func)(**describe_kwargs)
+        if name and name in resources["name"]:
+            error = "{} '{}' not found, maybe on of {}?"
+            raise ValueError(error.format(kind.capitalize(), name, resources["name"]))
 
-    resources = {}
-    for field_name, get_field in get_fields.items():
-        # FIXME do some error handling here
-        resources[field_name] = get_field(resource_resp)
+        if not name and len(resources) == 1:
+            name = resources["name"][0]
+            msg = "No {} specifided. Using '{}' as is the only one"
+            print(msg.format(kind, name))
+            resources["name"] = name
+            return resources
 
-    if name and name in resources["name"]:
-        resources["name"] = name
-        return resources
+        msg = "\nNo {} specified, choose one:\n{}"
+        name = click.prompt(msg.format(kind, resources["name"]), type=str)
 
-    if name and name in resources["name"]:
-        error = "{} '{}' not found, maybe on of {}?"
-        raise ValueError(error.format(kind.capitalize(), name, resources["name"]))
-
-    if not name and len(resources) == 1:
-        name = resources["name"][0]
-        msg = "No {} specifided. Using '{}' as is the only one"
-        print(msg.format(kind, name))
-        resources["name"] = name
-        return resources
-
-    msg = "\nNo {} specified, choose one:\n{}"
-    name = click.prompt(msg.format(kind, resources["name"]), type=str)
-
-    return get_described_resource(
-        ecs,
-        describe_func,
-        describe_kwargs,
-        kind,
-        get_fields,
-        name,
-    )
+        return self.describe(
+            dfunc,
+            dkwargs,
+            kind,
+            get_fields,
+            name,
+        )
 
 
 def check_bastion_ssh_error(bastion):
@@ -208,20 +213,21 @@ def ecsh(cluster, service, task, container, bastion):
 
     ecs = boto3.client("ecs")
     ec2 = boto3.client("ec2")
+
+    resource = AWSResource()
+
     try:
-        cluster = get_listed_resource(
-            ecs,
-            listing_func="list_clusters",
-            listing_kwargs={},
+        cluster = resource.list(
+            lfunc="list_clusters",
+            lkwargs={},
             kind="cluster",
             arns_key="clusterArns",
             name=cluster,
         )
 
-        service = get_listed_resource(
-            ecs,
-            listing_func="list_services",
-            listing_kwargs={
+        service = resource.list(
+            lfunc="list_services",
+            lkwargs={
                 "cluster": cluster,
             },
             kind="service",
@@ -229,10 +235,9 @@ def ecsh(cluster, service, task, container, bastion):
             name=service,
         )
 
-        task = get_listed_resource(
-            ecs,
-            listing_func="list_tasks",
-            listing_kwargs={
+        task = resource.list(
+            lfunc="list_tasks",
+            lkwargs={
                 "cluster": cluster,
                 "serviceName": service,
             },
@@ -241,10 +246,9 @@ def ecsh(cluster, service, task, container, bastion):
             name=task,
         )
 
-        container = get_described_resource(
-            ecs,
-            describe_func="describe_tasks",
-            describe_kwargs={
+        container = resource.describe(
+            dfunc="describe_tasks",
+            dkwargs={
                 "cluster": cluster,
                 "tasks": [task],
             },
